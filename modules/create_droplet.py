@@ -159,17 +159,26 @@ def select_image(d: Union[Message, CallbackQuery], data: dict):
 
         markup = InlineKeyboardMarkup(row_width=2)
         buttons = []
-        for image in images:
-            if image.distribution in ['Ubuntu', 'CentOS', 'Debian'] \
-                    and image.public \
-                    and image.status == 'available' \
-                    and user_dict[d.from_user.id]["region_slug"] in image.regions:
-                buttons.append(
-                    InlineKeyboardButton(
-                        text=f'{image.distribution} {image.name}',
-                        callback_data=f'create_droplet?nf=get_name&image={image.slug}'
-                    )
+
+        # Adding specific IDs for Debian and Ubuntu versions
+        custom_images = {
+            'Debian 10 x64': '106569146',
+            'Ubuntu 20.04 x64': '112929454',
+            'Debian 11 x64': '107383423',
+            'Debian 12 x64': '107383426',
+            'Ubuntu 18.04 x64': '108383927',
+            'Ubuntu 22.04 x64': '108383930',
+            'Ubuntu 24.04 x64': '108383933'
+        }
+
+        for label, id in custom_images.items():
+            buttons.append(
+                InlineKeyboardButton(
+                    text=label,
+                    callback_data=f'create_droplet?nf=get_name&image={id}'
                 )
+            )
+
         markup.add(*buttons)
         markup.row(
             InlineKeyboardButton(
@@ -180,7 +189,7 @@ def select_image(d: Union[Message, CallbackQuery], data: dict):
 
         return markup
 
-    if type(d) == Message:
+    if isinstance(d, Message):
         msg = bot.send_message(
             text=f'{_t}'
                  f'Dapatkan Sys Os...',
@@ -196,7 +205,7 @@ def select_image(d: Union[Message, CallbackQuery], data: dict):
             parse_mode='HTML'
         )
 
-    elif type(d) == CallbackQuery:
+    elif isinstance(d, CallbackQuery):
         bot.edit_message_text(
             text=f'{_t}'
                  f'Dapatkan Sys Os...',
@@ -212,7 +221,6 @@ def select_image(d: Union[Message, CallbackQuery], data: dict):
             reply_markup=get_image_markup(),
             parse_mode='HTML'
         )
-
 
 def get_name(call: CallbackQuery, data: dict):
     image_slug = data['image'][0]
@@ -235,7 +243,6 @@ def get_name(call: CallbackQuery, data: dict):
         parse_mode='HTML'
     )
     bot.register_next_step_handler(msg, ask_create)
-
 
 def ask_create(m: Message):
     if m.text == '/back':
