@@ -164,8 +164,8 @@ def select_image(d: Union[Message, CallbackQuery], data: dict):
         custom_images = {
             'Debian 10 x64': '106569146',
             'Ubuntu 20.04 x64': '112929454',
-            'Debian 11 x64': '107383423',
-            'Debian 12 x64': '107383426',
+            'Debian 11 x64': '135565397',
+            'Debian 12 x64': '160232556',
             'Ubuntu 18.04 x64': '108383927',
             'Ubuntu 22.04 x64': '108383930',
             'Ubuntu 24.04 x64': '108383933'
