@@ -30,11 +30,18 @@ def start(d: Message):
             callback_data='manage_droplets'
         ),
     )
-    # Tambahkan tombol Rebuild VPS
+    # Tombol Rebuild VPS
     markup.add(
         InlineKeyboardButton(
             text='Rebuild VPS',
             callback_data='rebuild_vps'
+        )
+    )
+    # Tombol Resize VPS (tambahan baru)
+    markup.add(
+        InlineKeyboardButton(
+            text='Resize VPS',
+            callback_data='resize_vps'
         )
     )
 
@@ -48,6 +55,7 @@ def start(d: Message):
         '/add_vps - membuat droplets\n' \
         '/sett_vps - list droplets\n' \
         '/rebuild_vps - reinstall VPS\n' \
+        '/resize_vps - resize VPS\n' \
         ' \n'
     bot.send_message(
         text=t,
