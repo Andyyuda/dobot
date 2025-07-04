@@ -20,7 +20,6 @@ user_dict = {}
 
 t = '<b>Buat VPS</b>\n\n'
 
-
 def create_droplet(d: Union[Message, CallbackQuery], data: dict = None):
     data = data or {}
     next_func = data.get('nf', ['select_account'])[0]
@@ -29,9 +28,7 @@ def create_droplet(d: Union[Message, CallbackQuery], data: dict = None):
         args = [d]
         if len(data.keys()) > 0:
             args.append(data)
-
         globals()[next_func](*args)
-
 
 def select_account(d: Union[Message, CallbackQuery]):
     accounts = AccountsDB().all()
@@ -52,10 +49,8 @@ def select_account(d: Union[Message, CallbackQuery]):
         reply_markup=markup
     )
 
-
 def select_region(call: CallbackQuery, data: dict):
     doc_id = data['doc_id'][0]
-
     account = AccountsDB().get(doc_id=doc_id)
     user_dict[call.from_user.id] = {
         'account': account
@@ -94,10 +89,8 @@ def select_region(call: CallbackQuery, data: dict):
         parse_mode='HTML'
     )
 
-
 def select_size(call: CallbackQuery, data: dict):
     region_slug = data['region'][0]
-
     user_dict[call.from_user.id].update({
         'region_slug': region_slug
     })
@@ -142,51 +135,42 @@ def select_size(call: CallbackQuery, data: dict):
         parse_mode='HTML'
     )
 
-
 def select_image(d: Union[Message, CallbackQuery], data: dict):
     size_slug = data['size'][0]
-
     user_dict[d.from_user.id].update({
         'size_slug': size_slug
     })
-
     _t = t + f'Akun: <code>{user_dict[d.from_user.id]["account"]["email"]}</code>\n' \
              f'Negara: <code>{user_dict[d.from_user.id]["region_slug"]}</code>\n' \
              f'Model: <code>{size_slug}</code>\n\n'
 
     def get_image_markup():
         images = digitalocean.Manager(token=user_dict[d.from_user.id]['account']['token']).get_distro_images()
+        filtered = []
+        for img in images:
+            if img.public and img.distribution in ['Ubuntu', 'Debian']:
+                allowed_versions = ['18.04', '20.04', '22.04', '24.04', '10', '11', '12']
+                if any(ver in img.name for ver in allowed_versions):
+                    label = f"{img.distribution} {img.name}"
+                    filtered.append((label, img.id))
+        # Remove duplicates (if any)
+        filtered = list(dict(filtered).items())
+        filtered = sorted(filtered, key=lambda x: x[0])
 
         markup = InlineKeyboardMarkup(row_width=2)
-        buttons = []
-
-        # Adding specific IDs for Debian and Ubuntu versions
-        custom_images = {
-            'Debian 10 x64': '106569146',
-            'Ubuntu 20.04 x64': '112929454',
-            'Debian 11 x64': '135565397',
-            'Debian 12 x64': '160232556',
-            'Ubuntu 18.04 x64': '108383927',
-            'Ubuntu 22.04 x64': '108383930',
-            'Ubuntu 24.04 x64': '108383933'
-        }
-
-        for label, id in custom_images.items():
-            buttons.append(
+        for label, image_id in filtered:
+            markup.add(
                 InlineKeyboardButton(
                     text=label,
-                    callback_data=f'create_droplet?nf=get_name&image={id}'
+                    callback_data=f'create_droplet?nf=get_name&image={image_id}'
                 )
             )
-
-        markup.add(*buttons)
         markup.row(
             InlineKeyboardButton(
                 text='Sebelumnya',
                 callback_data=f'create_droplet?nf=select_size&region={user_dict[d.from_user.id]["region_slug"]}'
             )
         )
-
         return markup
 
     if isinstance(d, Message):
@@ -204,7 +188,6 @@ def select_image(d: Union[Message, CallbackQuery], data: dict):
             reply_markup=get_image_markup(),
             parse_mode='HTML'
         )
-
     elif isinstance(d, CallbackQuery):
         bot.edit_message_text(
             text=f'{_t}'
@@ -278,7 +261,6 @@ def ask_create(m: Message):
         parse_mode='HTML'
     )
 
-
 def cancel_create(call: CallbackQuery):
     bot.edit_message_text(
         text=f'{call.message.html_text}\n\n'
@@ -287,7 +269,6 @@ def cancel_create(call: CallbackQuery):
         message_id=call.message.message_id,
         parse_mode='HTML'
     )
-
 
 def confirm_create(call: CallbackQuery, data: dict):
     droplet_name = data['name'][0]
@@ -316,7 +297,18 @@ def confirm_create(call: CallbackQuery, data: dict):
         while action.status != 'completed':
             sleep(5)
             action.load()
-    droplet.load()
+
+    # Poll IP sampai non-empty, max 30x5s = 2.5 menit
+    max_wait = 30
+    ip_addr = None
+    for _ in range(max_wait):
+        droplet.load()
+        ip_addr = droplet.ip_address
+        if ip_addr:
+            break
+        sleep(5)
+    if not ip_addr:
+        ip_addr = "IP belum terdeteksi, silakan cek beberapa saat lagi."
 
     markup = InlineKeyboardMarkup()
     markup.row(
@@ -330,9 +322,9 @@ def confirm_create(call: CallbackQuery, data: dict):
 
     bot.edit_message_text(
         text=f'{call.message.html_text}\n'
-             f'Username  : <code>root</code>\n'   
+             f'Username  : <code>root</code>\n'
              f'Kata Sandi: <code>{password}</code>\n'
-             f'IP VPS    ：<code>{droplet.ip_address}</code>\n\n'
+             f'IP VPS    ：<code>{ip_addr}</code>\n\n'
              '<b>Buat Server Telah Selesai</b>',
         chat_id=call.from_user.id,
         message_id=call.message.message_id,
