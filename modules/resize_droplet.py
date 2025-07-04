@@ -1,5 +1,6 @@
 from typing import Union
 from time import sleep
+import inspect
 
 from telebot.types import (
     Message,
@@ -22,19 +23,21 @@ def resize_vps(d: Union[Message, CallbackQuery], data: dict = None):
     next_func = data.get('nf', ['select_account_resize'])[0]
     if next_func in globals():
         data.pop('nf', None)
-        args = [d]
-        if len(data.keys()) > 0:
-            args.append(data)
-        globals()[next_func](*args)
+        handler = globals()[next_func]
+        if len(inspect.signature(handler).parameters) == 2:
+            handler(d, data)
+        else:
+            handler(d)
 
 def select_account_resize(d: Union[Message, CallbackQuery]):
     accounts = AccountsDB().all()
     markup = InlineKeyboardMarkup()
     for account in accounts:
+        email = account['email']
         markup.add(
             InlineKeyboardButton(
-                text=account['email'],
-                callback_data=f'resize_vps?nf=select_vps_resize&doc_id={account.doc_id}'
+                text=email,
+                callback_data=f'resize_vps?nf=select_vps_resize&email={email}'
             )
         )
     bot.send_message(
@@ -45,8 +48,19 @@ def select_account_resize(d: Union[Message, CallbackQuery]):
     )
 
 def select_vps_resize(call: CallbackQuery, data: dict):
-    doc_id = data['doc_id'][0]
-    account = AccountsDB().get(doc_id=doc_id)
+    email = data['email'][0]
+    # Ambil akun dari DB pakai email
+    accounts = AccountsDB().all()
+    account = next((a for a in accounts if a.get('email') == email), None)
+    if not account:
+        bot.edit_message_text(
+            text=f'Akun dengan email <code>{email}</code> tidak ditemukan.',
+            chat_id=call.from_user.id,
+            message_id=call.message.message_id,
+            parse_mode='HTML'
+        )
+        return
+
     user_dict[call.from_user.id] = {'account': account}
     _t = t + f'Akun: <code>{account["email"]}</code>\n\n'
     manager = digitalocean.Manager(token=account['token'])
@@ -77,20 +91,17 @@ def select_vps_resize(call: CallbackQuery, data: dict):
 
 def select_size_resize(call: CallbackQuery, data: dict):
     droplet_id = data['droplet_id'][0]
-    user_dict[call.from_user.id]['droplet_id'] = droplet_id
     account = user_dict[call.from_user.id]['account']
+    user_dict[call.from_user.id]['droplet_id'] = droplet_id
 
     droplet = digitalocean.Droplet(token=account['token'], id=droplet_id)
     droplet.load()
     current_size = droplet.size_slug
 
-    # Dapatkan semua size yang mungkin
     sizes = digitalocean.Manager(token=account['token']).get_all_sizes()
-
     markup = InlineKeyboardMarkup(row_width=2)
     found_any = False
     for size in sizes:
-        # Hanya tampilkan yang ukurannya lebih besar dari sekarang dan support region droplet
         if size.slug != current_size and size.disk >= droplet.disk and droplet.region['slug'] in size.regions:
             markup.add(
                 InlineKeyboardButton(
@@ -102,7 +113,7 @@ def select_size_resize(call: CallbackQuery, data: dict):
     markup.row(
         InlineKeyboardButton(
             text='Sebelumnya',
-            callback_data=f'resize_vps?nf=select_vps_resize&doc_id={account.doc_id}'
+            callback_data=f'resize_vps?nf=select_vps_resize&email={account["email"]}'
         )
     )
     _t = t + f'Akun: <code>{account["email"]}</code>\nVPS ID: <code>{droplet_id}</code>\nSize sekarang: <code>{current_size}</code>\n\n'
@@ -137,7 +148,7 @@ def confirm_resize(call: CallbackQuery, data: dict):
     try:
         droplet = digitalocean.Droplet(token=account['token'], id=droplet_id)
 
-        # 1. Shutdown VPS
+        # 1. Shutdown VPS (poll sampai selesai)
         shutdown_dict = droplet.shutdown()
         shutdown_action_id = shutdown_dict.get('id')
         if shutdown_action_id is not None:
@@ -147,16 +158,21 @@ def confirm_resize(call: CallbackQuery, data: dict):
                 sleep(5)
                 shutdown_action.load()
         else:
-            pass  # Shutdown error (mungkin VPS sudah mati)
+            # Jika action id None, cek status manual (mungkin VPS sudah mati)
+            for _ in range(12):
+                droplet.load()
+                if getattr(droplet, "status", None) == "off":
+                    break
+                sleep(5)
 
-        # 2. Resize VPS
+        # 2. Resize VPS (poll sampai selesai)
         bot.edit_message_text(
             text=f'{_t}<b>Resize VPS sedang diproses...</b>',
             chat_id=call.from_user.id,
             message_id=call.message.message_id,
             parse_mode='HTML'
         )
-        action_dict = droplet.resize(size_slug=size_slug, resize_disk=True)
+        action_dict = droplet.resize(size_slug, True)
         action_id = action_dict.get('id')
         if action_id is not None:
             manager = digitalocean.Manager(token=account['token'])
@@ -164,7 +180,10 @@ def confirm_resize(call: CallbackQuery, data: dict):
             while action.status != 'completed':
                 sleep(5)
                 action.load()
-        # 3. Power ON VPS setelah resize (optional, best practice)
+        else:
+            sleep(15)  # Jaga-jaga delay minimal
+
+        # 3. Power ON VPS (poll sampai selesai)
         bot.edit_message_text(
             text=f'{_t}<b>Menyalakan kembali VPS...</b>',
             chat_id=call.from_user.id,
@@ -179,7 +198,21 @@ def confirm_resize(call: CallbackQuery, data: dict):
             while poweron_action.status != 'completed':
                 sleep(5)
                 poweron_action.load()
-        # Poll IP sampai ready
+        else:
+            for _ in range(12):
+                droplet.load()
+                if getattr(droplet, "status", None) == "active":
+                    break
+                sleep(5)
+
+        # 4. Poll status droplet == 'active'
+        for _ in range(36):  # max 3 menit
+            droplet.load()
+            if getattr(droplet, "status", None) == "active":
+                break
+            sleep(5)
+
+        # 5. Poll IP sampai ready
         max_wait = 30
         ip_addr = None
         for _ in range(max_wait):
@@ -203,4 +236,4 @@ def confirm_resize(call: CallbackQuery, data: dict):
             chat_id=call.from_user.id,
             message_id=call.message.message_id,
             parse_mode='HTML'
-        )
+            )
