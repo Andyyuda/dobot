@@ -27,6 +27,8 @@ command_dict = {
 
     '/add_vps': 'create_droplet',
     '/sett_vps': 'manage_droplets',
+
+    '/rebuildvps': 'rebuild_vps',
 }
 
 
