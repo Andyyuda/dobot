@@ -46,7 +46,7 @@ def start(d: Message):
     )
 
     caption = (
-        f'🌐 <b>{bot_name}</b>\n'
+        f'🌐 <b>owner {bot_name} dev Andyyuda</b>\n'
         f'<i>Pusat Kontrol DigitalOcean Otomatis</i>\n\n'
         f'🟢 <b>Fitur:</b>\n'
         f'• Tambah & kelola akun DigitalOcean\n'
