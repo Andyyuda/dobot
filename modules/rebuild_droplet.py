@@ -82,17 +82,24 @@ def select_os_rebuild(call: CallbackQuery, data: dict):
     user_dict[call.from_user.id]['droplet_id'] = droplet_id
     account = user_dict[call.from_user.id]['account']
     _t = t + f'Akun: <code>{account["email"]}</code>\nVPS ID: <code>{droplet_id}</code>\n\n'
-    custom_images = {
-        'Debian 10 x64': '106569146',
-        'Ubuntu 20.04 x64': '112929454',
-        'Debian 11 x64': '135565397',
-        'Debian 12 x64': '160232556',
-        'Ubuntu 18.04 x64': '108383927',
-        'Ubuntu 22.04 x64': '108383930',
-        'Ubuntu 24.04 x64': '108383933'
-    }
+    
+    # Ambil daftar image OS dari API DigitalOcean
+    images = digitalocean.Manager(token=account['token']).get_distro_images()
+    filtered = []
+    for img in images:
+        if img.public and img.distribution in ['Ubuntu', 'Debian']:
+            # Filter versi populer saja, misal Ubuntu/Debian 18/20/22/24/10/11/12
+            allowed_versions = ['18.04', '20.04', '22.04', '24.04', '10', '11', '12']
+            if any(ver in img.name for ver in allowed_versions):
+                label = f"{img.distribution} {img.name}"
+                filtered.append((label, img.id))
+    # Hilangkan duplikat label (jika ada)
+    filtered = list(dict(filtered).items())
+    # Sort supaya rapi
+    filtered = sorted(filtered, key=lambda x: x[0])
+
     markup = InlineKeyboardMarkup(row_width=2)
-    for label, image_id in custom_images.items():
+    for label, image_id in filtered:
         markup.add(
             InlineKeyboardButton(
                 text=label,
@@ -105,13 +112,21 @@ def select_os_rebuild(call: CallbackQuery, data: dict):
             callback_data=f'rebuild_vps?nf=select_vps_rebuild&doc_id={account.doc_id}'
         )
     )
-    bot.edit_message_text(
-        text=f'{_t}Pilih OS yang ingin di-install ulang:',
-        chat_id=call.from_user.id,
-        message_id=call.message.message_id,
-        reply_markup=markup,
-        parse_mode='HTML'
-    )
+    if filtered:
+        bot.edit_message_text(
+            text=f'{_t}Pilih OS yang ingin di-install ulang:',
+            chat_id=call.from_user.id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+            parse_mode='HTML'
+        )
+    else:
+        bot.edit_message_text(
+            text=f'{_t}Tidak ada OS yang tersedia untuk rebuild!',
+            chat_id=call.from_user.id,
+            message_id=call.message.message_id,
+            parse_mode='HTML'
+        )
 
 def confirm_rebuild(call: CallbackQuery, data: dict):
     droplet_id = user_dict[call.from_user.id]['droplet_id']
@@ -126,10 +141,16 @@ def confirm_rebuild(call: CallbackQuery, data: dict):
     )
     try:
         droplet = digitalocean.Droplet(token=account['token'], id=droplet_id)
-        action = droplet.rebuild(image=image_id)
-        while action.status != 'completed':
-            sleep(5)
-            action.load()
+        action_dict = droplet.rebuild(image_id=image_id)
+        action_id = action_dict.get('id')   # Ambil ID action dari hasil dict
+
+        # Polling status action hingga selesai
+        if action_id is not None:
+            manager = digitalocean.Manager(token=account['token'])
+            action = manager.get_action(action_id)
+            while action.status != 'completed':
+                sleep(5)
+                action.load()
         droplet.load()
         ip_addr = droplet.ip_address or '-'
         bot.edit_message_text(
@@ -144,4 +165,4 @@ def confirm_rebuild(call: CallbackQuery, data: dict):
             chat_id=call.from_user.id,
             message_id=call.message.message_id,
             parse_mode='HTML'
-  )
+            )
