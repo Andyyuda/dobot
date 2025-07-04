@@ -4,7 +4,7 @@ from .manage_accounts import manage_accounts
 from .batch_test_accounts import batch_test_accounts
 from .account_detail import account_detail
 from .manage_droplets import manage_droplets
-from .rebuild_droplet import rebuild_droplet
+from .rebuild_droplet import rebuild_vps
 from .delete_account import delete_account
 from .batch_test_delete_accounts import batch_test_delete_accounts
 from .create_droplet import create_droplet
