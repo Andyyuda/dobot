@@ -11,3 +11,4 @@ from .create_droplet import create_droplet
 from .list_droplets import list_droplets
 from .droplet_detail import droplet_detail
 from .droplet_actions import droplet_actions
+from .resize_droplet import resize_vps
